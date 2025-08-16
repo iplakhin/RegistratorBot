@@ -8,6 +8,8 @@ from aiogram.fsm.state import State, StatesGroup
 from db.db import get_or_create_user
 from db.models.models import Appointment
 from services.services import get_calendar_markup, get_timeslots_kb, get_user_appointments, save_appointment, cancel_appointment
+from lexicon.lexicon import MAIN_MENU_COMMANDS, LEXICON
+
 
 router = Router()
 
@@ -24,7 +26,11 @@ class CancelState(StatesGroup):
 async def start(message: Message, state: FSMContext):
     await state.clear()
     await get_or_create_user(message.from_user.id)
-    await message.answer("Добро пожаловать! Для записи на прием выберите дату:", reply_markup=get_calendar_markup())
+    await message.answer(LEXICON["start_message"])
+
+@router.message(F.text == "/zapis")
+async def make_appointment(message: Message, state: FSMContext):
+    await message.answer(LEXICON["select_date"], reply_markup=get_calendar_markup())
     await state.set_state(BookingState.choosing_date)
 
 @router.callback_query(F.data.startswith("calendar:"), BookingState.choosing_date)
@@ -47,21 +53,19 @@ async def select_date(callback: CallbackQuery, state: FSMContext):
         # Получаем клавиатуру временных слотов
         timeslots_kb = await get_timeslots_kb(datetime.strptime(payload, "%d-%m-%Y"))
 
-        if isinstance(timeslots_kb, str):
-            text = f"Вы выбрали дату: {payload}\n{timeslots_kb}"
-            await callback.message.edit_text(text)
+        if not timeslots_kb:
+            await callback.message.edit_text(LEXICON["no_timeslots"])
         else:
-            text = f"Вы выбрали дату: {payload}\nТеперь выберите время:"
-            await callback.message.edit_text(text, reply_markup=timeslots_kb)
+            text = f"Вы выбрали дату: {payload}\nТеперь выберите время"
+            await callback.message.edit_text(text=text, reply_markup=timeslots_kb)
 
-        await callback.answer()
         await state.set_state(BookingState.choosing_time)
 
-@router.callback_query(F.data.startswith("time:"), BookingState.choosing_time)
+@router.callback_query(F.data.startswith("timeslot_id:"), BookingState.choosing_time)
 async def select_time(callback: CallbackQuery, state: FSMContext):
-    time = callback.data.split(":")[1]
-    await state.update_data(selected_time=time)
-    await callback.message.edit_text(f"Вы выбрали время: {time}\nВведите ваше имя и номер телефона для связи")
+    timeslot_id = int(callback.data.split(":")[1])
+    await state.update_data(selected_timeslot_id=timeslot_id)
+    await callback.message.edit_text(LEXICON["input_fio_tel"])
     await state.set_state(BookingState.entering_name_and_phone)
     await callback.answer()
 
@@ -72,27 +76,25 @@ async def process_name_and_phone(message: Message, state: FSMContext):
     appointment = {
         "user_id": message.from_user.id,
         "selected_date": data["selected_date"],
-        "selected_time": data["selected_time"],
+        "selected_timeslot_id": data["selected_timeslot_id"],
         "weekday": data["weekday"],
         "user_data": data["user_data"]
     }
     response = await save_appointment(appointment)
 
-    await message.answer(response)
+    await message.answer(text=LEXICON["appointment_success"] + "\n" + response)
     await state.clear()
 
-@router.message(F.text == "/appointments")
-async def show_appointments(message: Message, state: FSMContext):
+@router.message(F.text == "/moi_zapisi")
+async def show_appointments(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    records = get_user_appointments(message.from_user.id)
-    if records:
-        text = "\n\n".join([f"{r['date']} {r['time']} — {r['name']} ({r['phone']})" for r in records]) # тут возвращаем клавиатуру с записями
+    kb = await get_user_appointments(callback.from_user.id)
+    if not kb.inline_keyboard:
+        await callback.answer("Вы еще не записаны к доктору")
     else:
-        text = "У вас пока нет записей."
-    await message.answer(text)
-    await state.set_state(CancelState.choosing_appointment)
+        await callback.answer(text="Ваши записи\nНажмите на запись чтобы отменить или перенести", reply_markup=kb)
 
-@router.message(F.text == "/cancel")
+@router.message(F.text == "/otmena")
 async def cancel_menu(message: Message):
     records = get_user_appointments(message.from_user.id)
     if not records:

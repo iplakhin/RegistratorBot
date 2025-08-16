@@ -6,8 +6,11 @@ import calendar
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
+import db.db
 from db.models.models import Appointment
 from db.db import *
+from lexicon.lexicon import LEXICON
+from keyboard.keyboards import user_appointments_list_kb
 
 
 def get_calendar_markup(month_shift: int = 0) -> InlineKeyboardMarkup:
@@ -56,15 +59,13 @@ def get_calendar_markup(month_shift: int = 0) -> InlineKeyboardMarkup:
 
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-async def get_timeslots_kb(selected_date: datetime) -> InlineKeyboardMarkup | str:
-    timeslots = await get_timeslot_by_id(1) # get_available_timeslots(selected_date)
-
+async def get_timeslots_kb(selected_date: datetime) -> InlineKeyboardMarkup:
+    timeslots = await get_available_timeslots(selected_date)
+    kb = InlineKeyboardMarkup(inline_keyboard=[])
     if not timeslots:
-        return "Нет доступных слотов"
+        print("Таймслоты вернулись пустыми")
+        return kb
 
-    now = datetime.now()
-
-    kb = InlineKeyboardMarkup(row_width=1)
 
     for timeslot in timeslots:
         # Проверяем только если выбран текущий день недели
@@ -72,56 +73,59 @@ async def get_timeslots_kb(selected_date: datetime) -> InlineKeyboardMarkup | st
             year=selected_date.year, month=selected_date.month, day=selected_date.day
         )
 
-        if selected_date.date() == now.date():
-            if slot_time < now + timedelta(hours=1):
+        if selected_date.date() == datetime.now().date():
+            if slot_time <= datetime.now() + timedelta(hours=1):
                 continue
 
         button = InlineKeyboardButton(
             text=timeslot.start_time,
-            callback_data=f"timeslot:{timeslot.id}"
+            callback_data=f"timeslot_id:{timeslot.id}"
         )
-        kb.insert(button)
-
-        if not kb.inline_keyboard:
-            return "Нет доступных слотов"
+        kb.inline_keyboard.append([button])
 
     return kb
 
 async def save_appointment(appointment: dict) -> str:
     current_user = await get_or_create_user(appointment["user_id"])
-    appointments_list = await get_user_appointments(current_user.id)
 
-    if len(appointments_list) > 0 :
-        is_primary_appointment = False
+    appointments_list = await db.db.get_user_appointments(current_user.id)
+
+    timeslot = await get_timeslot_by_id(appointment["selected_timeslot_id"])
+
+    is_primary_appointment = False if len(appointments_list) > 0 else True
+    print(is_primary_appointment)
+
+    if await is_timeslot_available(appointment_date=datetime.strptime(appointment["selected_date"], "%d-%m-%Y").date(),
+                                   timeslot_pk=appointment["selected_timeslot_id"]):
+        print("проверка на доступный таймслот  прошла")
+        new_appointment = Appointment(
+            appointment_date=datetime.strptime(appointment["selected_date"], "%d-%m-%Y"),
+            user_data=appointment["user_data"],
+            is_primary=is_primary_appointment,
+            user_pk=current_user.id,
+            timeslot_pk=appointment["selected_timeslot_id"]
+        )
+        created_appointment = await create_appointment(new_appointment)
+        print("Appointment вернулся: " + created_appointment.__str__())
+        return f"Вы записаны к доктору\n{created_appointment.__str__()} часов"
     else:
-        is_primary_appointment = True
+        return "К сожалению выбранное время уже занято.\nВыберите другое"
 
-    timeslot = await get_timeslot(appointment["weekday"], appointment["selected_date"])
-
-    new_appointment = Appointment(
-        appointment_date = datetime.strptime(appointment["selected_date"], "%d-%m-%Y"),
-        user_data = appointment["user_data"],
-        is_primary = is_primary_appointment,
-        user_id = current_user.id,
-        timeslot_id = appointment["selected_time"]
-    )
-
-    if await is_timeslot_available():
-        await create_appointment(new_appointment)
-        return "Запись успешно создана!"
+async def get_user_appointments(user_telegram_id: int) -> InlineKeyboardMarkup:
+    user = await get_or_create_user(user_telegram_id)
+    if user:
+        appointments_list = await db.db.get_user_appointments(user_pk=user.id)
     else:
-        return "К сожалению выбранное время уже занято"
+        raise ValueError("User is not found")
+
+    if appointments_list is not None:
+        if len(appointments_list) > 0:
+           return user_appointments_list_kb(appointments_list)
+
+    return InlineKeyboardMarkup(inline_keyboard=[])
 
 
-
-def get_user_appointments(user_id: int) -> list:
-    # Заглушка списка записей
-    return [
-        {"id": "1", "date": "2025-06-15", "time": "10:00", "name": "Иванов И.И.", "phone": "+79991234567"},
-        {"id": "2", "date": "2025-06-16", "time": "12:00", "name": "Иванов И.И.", "phone": "+79991234567"},
-    ]
-
-def cancel_appointment(appointment_id: str):
+def cancel_appointment(appointment_id: int):
     # Заглушка отмены записи
     print(f"Cancelled appointment with id {appointment_id}")
 

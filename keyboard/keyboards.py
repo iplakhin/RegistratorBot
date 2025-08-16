@@ -1,10 +1,19 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-def mock_appointments_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Запись 1 (12.07 14:00)", callback_data="appointment_1")],
-        [InlineKeyboardButton(text="Запись 2 (13.07 16:00)", callback_data="appointment_2")]
-    ])
+from db.models.models import Appointment
+
+
+def user_appointments_list_kb(appointments_list: list[Appointment]):
+    kb = InlineKeyboardBuilder()
+    if appointments_list is not None:
+        for appointment in appointments_list:
+            button = InlineKeyboardButton(text=appointment.__str__(), callback_data=f"appointment_id:{appointment.id}")
+            kb.row(button, width=1)
+    else:
+        return InlineKeyboardMarkup(inline_keyboard=[])
+    return  kb.as_markup()
+
 
 def confirm_cancel_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
