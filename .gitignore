@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Alembic
+alembic.ini
+migrations/
+__init__.py
+*.xml
+.idea/
