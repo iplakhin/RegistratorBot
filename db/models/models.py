@@ -23,30 +23,32 @@ class Appointment(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
-    appointment_date: Mapped[date] = mapped_column()
-    user_data: Mapped[str]
+    comment: Mapped[str] = mapped_column(nullable=True)
     is_primary: Mapped[bool] = mapped_column(default=True)
 
-    user_pk: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"))
-    timeslot_pk: Mapped[int] = mapped_column(ForeignKey("timeslot.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="SET NULL"))
+    timeslot_id: Mapped[int] = mapped_column(ForeignKey("timeslot.id", ondelete="CASCADE"))
 
     user: Mapped["User"] = relationship(back_populates="appointments", lazy="selectin")
     timeslot: Mapped["Timeslot"] = relationship(back_populates="appointments", lazy="selectin")
 
     def __str__(self):
-        return f"{self.appointment_date.strftime("%d-%m-%Y")} в {self.timeslot.start_time}"
+        return f"{self.timeslot.start_datetime.strftime(format="%d-%m-%Y %H:%M")}"
 
 
 class Timeslot(Base):
     __tablename__ = "timeslot"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    weekday: Mapped[int] = mapped_column(nullable=False)
-    start_time: Mapped[str]
-    end_time: Mapped[str]
-    appointments: Mapped[List["Appointment"]] = relationship(back_populates="timeslot", cascade="all, delete-orphan")
+    start_datetime: Mapped[datetime] = mapped_column(nullable=False, index=True)
+    end_datetime: Mapped[datetime] = mapped_column(nullable=False)
+    occupied: Mapped[bool] = mapped_column(default=False)
+
+    appointments: Mapped[List["Appointment"]] = relationship(back_populates="timeslot",
+                                                             cascade="all, delete-orphan",
+                                                             uselist=False)
 
     def __str__(self):
-        return self.start_time
+        return self.start_datetime.strftime(format="%d-%m-%Y %H:%M")
 
 
