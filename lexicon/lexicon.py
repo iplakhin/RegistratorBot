@@ -3,7 +3,6 @@ MAIN_MENU_COMMANDS: dict[str, str] = {
     "/zapis": "Записаться на прием",
     "/moi_zapisi": "Ваши записи",
     "/otmena": "❌ Отменить запись",
-    "/perenos": "Перенести запись",
     "/help": "Помощь"
 }
 

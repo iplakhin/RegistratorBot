@@ -5,10 +5,11 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKe
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
-from db.db import get_or_create_user
-from db.models.models import Appointment
-from services.services import get_calendar_markup, get_timeslots_kb, get_user_appointments, save_appointment, cancel_appointment
-from lexicon.lexicon import MAIN_MENU_COMMANDS, LEXICON
+from db.db import get_or_create_user, delete_appointment
+from services.services import get_calendar_markup, get_timeslots_kb, get_user_appointments, save_appointment
+from services.gcal import get_gcalendar_service, get_next_week_events
+from lexicon.lexicon import LEXICON
+from keyboard.keyboards import confirm_cancel_kb
 
 
 router = Router()
@@ -19,14 +20,31 @@ class BookingState(StatesGroup):
     entering_name_and_phone = State()
 
 class CancelState(StatesGroup):
-    choosing_appointment = State()
+    select_appointment = State()
+    confirm_cancel = State()
+
+class ReplaceState(StatesGroup):
+    select_appointment = State()
+    choosing_date = State()
+    choosing_time = State()
     confirming_cancel = State()
+
 
 @router.message(F.text == "/start")
 async def start(message: Message, state: FSMContext):
     await state.clear()
     await get_or_create_user(message.from_user.id)
     await message.answer(LEXICON["start_message"])
+
+@router.message(F.text == "/get_schedule")
+async def get_schedule(message: Message):
+    service = get_gcalendar_service()
+    events = get_next_week_events(service)
+    for event in events:
+        print(event)
+    await message.answer("events are received")
+
+
 
 @router.message(F.text == "/zapis")
 async def make_appointment(message: Message, state: FSMContext):
@@ -92,27 +110,57 @@ async def show_appointments(callback: CallbackQuery, state: FSMContext):
     if not kb.inline_keyboard:
         await callback.answer("Вы еще не записаны к доктору")
     else:
-        await callback.answer(text="Ваши записи\nНажмите на запись чтобы отменить или перенести", reply_markup=kb)
+        await callback.answer(text="Ваши записи", reply_markup=kb)
 
 @router.message(F.text == "/otmena")
-async def cancel_menu(message: Message):
-    records = get_user_appointments(message.from_user.id)
-    if not records:
+async def cancel_appointment(message: Message, state: FSMContext):
+    await state.clear()
+    kb = await get_user_appointments(message.from_user.id)
+    if not kb.inline_keyboard:
         await message.answer("У вас нет записей.")
         return
-
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{r['date']} {r['time']}", callback_data=f"cancel:{r['id']}")] for r in records
-    ])
+    
     await message.answer("Выберите запись для отмены:", reply_markup=kb)
+    await state.set_state(CancelState.select_appointment)
 
-@router.callback_query(F.data.startswith("cancel:"))
-async def process_cancel(callback: CallbackQuery):
-    appointment_id = callback.data.split(":")[1]
-    cancel_appointment(appointment_id)
-    await callback.message.edit_text("Запись отменена.")
+@router.callback_query(F.data.startswith("appointment_id:"), CancelState.select_appointment)
+async def select_appointment_to_cancel(callback: CallbackQuery, state: FSMContext):
+    appointment_id = int(callback.data.split(":")[1])
+    await state.update_data(selected_appointment_id=appointment_id)
+    
+    await callback.message.edit_text(
+        "Подтвердите отмену записи:",
+        reply_markup=confirm_cancel_kb()
+    )
+    await state.set_state(CancelState.confirm_cancel)
     await callback.answer()
 
-@router.callback_query()
-async def other(message: Message):
-    pass
+@router.callback_query(F.data == "confirm_cancel", CancelState.confirm_cancel)
+async def confirm_cancel_appointment(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    appointment_id = data["selected_appointment_id"]
+    
+    try:
+        await delete_appointment(appointment_id)
+        await callback.message.edit_text("✅ Запись успешно отменена!")
+    except Exception as e:
+        await callback.message.edit_text("❌ Ошибка при отмене записи. Попробуйте позже.")
+        print(f"Error canceling appointment: {e}")
+    
+    await state.clear()
+    await callback.answer()
+
+@router.callback_query(F.data == "back_to_appointments", CancelState.confirm_cancel)
+async def back_to_appointments_list(callback: CallbackQuery, state: FSMContext):
+    kb = await get_user_appointments(callback.from_user.id)
+    if not kb.inline_keyboard:
+        await callback.message.edit_text("У вас нет записей.")
+        await state.clear()
+    else:
+        await callback.message.edit_text(
+            "Выберите запись для отмены:",
+            reply_markup=kb
+        )
+        await state.set_state(CancelState.select_appointment)
+    
+    await callback.answer()

@@ -212,3 +212,5 @@ migrations/
 __init__.py
 *.xml
 .idea/
+/credentials.json
+/token.json

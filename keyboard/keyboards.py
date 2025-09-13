@@ -1,10 +1,8 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from db.models.models import Appointment
 
-
-def user_appointments_list_kb(appointments_list: list[Appointment]):
+def user_appointments_list_kb(appointments_list):
     kb = InlineKeyboardBuilder()
     if appointments_list is not None:
         for appointment in appointments_list:

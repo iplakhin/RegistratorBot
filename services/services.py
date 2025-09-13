@@ -1,13 +1,9 @@
-from calendar import weekday
-from typing import List
-
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import calendar
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 import db.db
-from db.models.models import Appointment
 from db.db import *
 from lexicon.lexicon import LEXICON
 from keyboard.keyboards import user_appointments_list_kb
@@ -97,16 +93,7 @@ async def save_appointment(appointment: dict) -> str:
 
     if await is_timeslot_available(appointment_date=datetime.strptime(appointment["selected_date"], "%d-%m-%Y").date(),
                                    timeslot_pk=appointment["selected_timeslot_id"]):
-        print("проверка на доступный таймслот  прошла")
-        new_appointment = Appointment(
-            appointment_date=datetime.strptime(appointment["selected_date"], "%d-%m-%Y"),
-            user_data=appointment["user_data"],
-            is_primary=is_primary_appointment,
-            user_pk=current_user.id,
-            timeslot_pk=appointment["selected_timeslot_id"]
-        )
-        created_appointment = await create_appointment(new_appointment)
-        print("Appointment вернулся: " + created_appointment.__str__())
+        created_appointment = None
         return f"Вы записаны к доктору\n{created_appointment.__str__()} часов"
     else:
         return "К сожалению выбранное время уже занято.\nВыберите другое"
@@ -125,8 +112,5 @@ async def get_user_appointments(user_telegram_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[])
 
 
-def cancel_appointment(appointment_id: int):
-    # Заглушка отмены записи
-    print(f"Cancelled appointment with id {appointment_id}")
 
 
